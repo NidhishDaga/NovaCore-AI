@@ -1,5 +1,4 @@
 import streamlit as st
-import streamlit.components.v1 as components
 import sqlite3
 import requests
 import json
@@ -225,30 +224,6 @@ div[class*="chatInput"] {
     backdrop-filter: blur(12px);
 }
 
-.scroll-to-bottom-btn {
-    position: fixed;
-    bottom: 100px;
-    right: 30px;
-    width: 46px;
-    height: 46px;
-    border-radius: 50%;
-    background: linear-gradient(135deg, #2563eb, #1d4ed8);
-    border: none;
-    cursor: pointer;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    font-size: 20px;
-    color: white;
-    z-index: 9999;
-    box-shadow: 0 4px 20px rgba(37,99,235,0.5);
-    transition: transform 0.2s ease, box-shadow 0.2s ease;
-}
-
-.scroll-to-bottom-btn:hover {
-    transform: scale(1.15);
-    box-shadow: 0 6px 28px rgba(37,99,235,0.75);
-}
 
 </style>
 """, unsafe_allow_html=True)
@@ -417,41 +392,6 @@ for message in messages:
             st.markdown(f"🧑 {message['content']}")
         else:
             st.markdown(f"🤖 {message['content']}")
-
-# =========================================================
-# SCROLL TO BOTTOM BUTTON
-# =========================================================
-st.markdown(
-    '<button id="nova-scroll-btn" class="scroll-to-bottom-btn" title="Jump to latest">&#8595;</button>',
-    unsafe_allow_html=True
-)
-
-components.html("""
-<script>
-(function() {
-    var doc = window.parent.document;
-    if (doc._novaScrollReady) return;
-    doc._novaScrollReady = true;
-
-    doc.body.addEventListener('click', function(e) {
-        var target = e.target;
-        while (target && target.id !== 'nova-scroll-btn') {
-            target = target.parentElement;
-        }
-        if (!target) return;
-
-        var main = doc.querySelector('[data-testid="stMain"]')
-                || doc.querySelector('section.main')
-                || doc.querySelector('.main');
-        if (main) {
-            main.scrollTo({ top: main.scrollHeight, behavior: 'smooth' });
-        } else {
-            window.parent.scrollTo({ top: doc.documentElement.scrollHeight, behavior: 'smooth' });
-        }
-    });
-})();
-</script>
-""", height=1)
 
 # =========================================================
 # CHAT INPUT
