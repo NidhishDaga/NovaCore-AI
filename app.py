@@ -4,6 +4,7 @@ import requests
 import json
 import base64
 import io
+from datetime import datetime
 from PIL import Image
 from PyPDF2 import PdfReader
 from streamlit_mic_recorder import speech_to_text
@@ -28,57 +29,70 @@ CREATE TABLE IF NOT EXISTS chats (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     chat_name TEXT,
     role TEXT,
-    content TEXT
+    content TEXT,
+    timestamp TEXT DEFAULT ''
 )
 """)
-
 conn.commit()
+
+# Safe migration: add timestamp to existing databases without it
+try:
+    cursor.execute("ALTER TABLE chats ADD COLUMN timestamp TEXT DEFAULT ''")
+    conn.commit()
+except Exception:
+    pass
 
 # =========================================================
 # FUNCTIONS
 # =========================================================
 def save_message(chat_name, role, content):
-
     cursor.execute(
-        "INSERT INTO chats (chat_name, role, content) VALUES (?, ?, ?)",
-        (chat_name, role, content)
+        "INSERT INTO chats (chat_name, role, content, timestamp) VALUES (?, ?, ?, ?)",
+        (chat_name, role, content, datetime.now().strftime("%H:%M"))
     )
-
     conn.commit()
 
 
 def load_chat(chat_name):
-
     cursor.execute(
-        "SELECT role, content FROM chats WHERE chat_name=?",
+        "SELECT role, content, timestamp FROM chats WHERE chat_name=?",
         (chat_name,)
     )
-
     rows = cursor.fetchall()
-
     return [
-        {
-            "role": row[0],
-            "content": row[1]
-        }
+        {"role": row[0], "content": row[1], "timestamp": row[2] or ""}
         for row in rows
     ]
 
 
 def get_chat_names():
-
-    cursor.execute(
-        "SELECT DISTINCT chat_name FROM chats"
-    )
-
+    cursor.execute("SELECT DISTINCT chat_name FROM chats")
     rows = cursor.fetchall()
-
     names = [row[0] for row in rows]
-
     if "New Chat" not in names:
         names.insert(0, "New Chat")
-
     return names
+
+
+def rename_chat(old_name, new_name):
+    cursor.execute(
+        "UPDATE chats SET chat_name=? WHERE chat_name=?",
+        (new_name, old_name)
+    )
+    conn.commit()
+
+
+def clear_chat(chat_name):
+    cursor.execute("DELETE FROM chats WHERE chat_name=?", (chat_name,))
+    conn.commit()
+
+
+def check_ollama():
+    try:
+        r = requests.get("http://localhost:11434/api/tags", timeout=2)
+        return r.status_code == 200
+    except Exception:
+        return False
 
 # =========================================================
 # SESSION STATE
@@ -224,7 +238,6 @@ div[class*="chatInput"] {
     backdrop-filter: blur(12px);
 }
 
-
 </style>
 """, unsafe_allow_html=True)
 
@@ -235,8 +248,12 @@ with st.sidebar:
 
     st.title("⚙️ NovaCore")
 
-    if st.button("➕ New Chat", use_container_width=True):
+    if check_ollama():
+        st.success("🟢 Ollama Online")
+    else:
+        st.error("🔴 Ollama Offline — run `ollama serve`")
 
+    if st.button("➕ New Chat", use_container_width=True):
         new_name = f"Chat_{len(get_chat_names()) + 1}"
         st.session_state.current_chat = new_name
         st.rerun()
@@ -253,6 +270,49 @@ with st.sidebar:
     )
 
     st.session_state.current_chat = selected_chat
+
+    st.markdown("### ✏️ Chat Options")
+
+    new_chat_name = st.text_input(
+        "Rename current chat",
+        value=st.session_state.current_chat,
+        key="rename_input"
+    )
+
+    if st.button("✏️ Rename", use_container_width=True):
+        new_chat_name = new_chat_name.strip()
+        if new_chat_name and new_chat_name != st.session_state.current_chat:
+            rename_chat(st.session_state.current_chat, new_chat_name)
+            st.session_state.current_chat = new_chat_name
+            st.rerun()
+
+    col1, col2 = st.columns(2)
+
+    with col1:
+        if st.button("🗑️ Clear", use_container_width=True):
+            clear_chat(st.session_state.current_chat)
+            st.rerun()
+
+    with col2:
+        if st.button("❌ Delete", use_container_width=True):
+            clear_chat(st.session_state.current_chat)
+            st.session_state.current_chat = "New Chat"
+            st.rerun()
+
+    export_msgs = load_chat(st.session_state.current_chat)
+    if export_msgs:
+        export_text = f"# {st.session_state.current_chat}\n\n"
+        for m in export_msgs:
+            label = "You" if m["role"] == "user" else "NovaCore AI"
+            ts = f" [{m['timestamp']}]" if m.get("timestamp") else ""
+            export_text += f"**{label}{ts}:**\n{m['content']}\n\n---\n\n"
+        st.download_button(
+            "📥 Export Chat",
+            export_text,
+            file_name=f"{st.session_state.current_chat}.md",
+            mime="text/markdown",
+            use_container_width=True
+        )
 
     st.markdown("---")
 
@@ -271,6 +331,15 @@ with st.sidebar:
     )
 
     st.success(f"🟢 {model_name} Active")
+
+    temperature = st.slider(
+        "🌡️ Temperature",
+        min_value=0.0,
+        max_value=1.5,
+        value=0.7,
+        step=0.1,
+        help="Higher = more creative. Lower = more focused and precise."
+    )
 
     st.markdown("---")
 
@@ -393,6 +462,9 @@ for message in messages:
         else:
             st.markdown(f"🤖 {message['content']}")
 
+        if message.get("timestamp"):
+            st.caption(message["timestamp"])
+
 # =========================================================
 # CHAT INPUT
 # =========================================================
@@ -405,6 +477,13 @@ if voice_text:
 # GENERATE RESPONSE
 # =========================================================
 if user_input:
+
+    # Auto-name new chats from the first message
+    if st.session_state.current_chat == "New Chat" and len(messages) == 0:
+        auto_name = user_input[:40].strip().replace("\n", " ")
+        if len(user_input) > 40:
+            auto_name += "..."
+        st.session_state.current_chat = auto_name
 
     save_message(
         st.session_state.current_chat,
@@ -431,7 +510,7 @@ if user_input:
         try:
 
             # =========================================================
-            # LLAVA VISION AI
+            # VISION AI — moondream with image
             # =========================================================
             if model_name == "moondream" and uploaded_image:
 
@@ -439,56 +518,67 @@ if user_input:
                 image = Image.open(uploaded_image)
 
                 buffered = io.BytesIO()
-
                 image.save(buffered, format="PNG")
+                image_base64 = base64.b64encode(buffered.getvalue()).decode("utf-8")
 
-                image_base64 = base64.b64encode(
-                    buffered.getvalue()
-                ).decode("utf-8")
+                api_messages = [
+                    {"role": m["role"], "content": m["content"]}
+                    for m in messages
+                ]
+                api_messages.append({
+                    "role": "user",
+                    "content": user_input,
+                    "images": [image_base64]
+                })
 
                 response = requests.post(
                     "http://localhost:11434/api/chat",
                     json={
                         "model": "moondream",
-                        "messages": [
-                            {
-                                "role": "user",
-                                "content": user_input,
-                                "images": [image_base64]
-                            }
-                        ],
-                        "stream": False
+                        "messages": api_messages,
+                        "stream": False,
+                        "options": {"temperature": temperature}
                     },
                     timeout=300
                 )
 
                 data = response.json()
-
                 full_response = data["message"]["content"]
 
                 typing_placeholder.empty()
-
-                response_placeholder.markdown(
-                    f"🤖 {full_response}"
-                )
+                response_placeholder.markdown(f"🤖 {full_response}")
 
             # =========================================================
-            # TEXT MODELS
+            # TEXT MODELS — with full conversation history
             # =========================================================
             else:
 
                 doc_context = st.session_state.document_text
-                prompt = (
-                    f"The user has uploaded a document for reference. Use it if the question is related to it, otherwise answer freely from your own knowledge.\n\nDocument:\n{doc_context}\n\nUser question: {user_input}"
-                    if doc_context else user_input
-                )
+
+                api_messages = []
+
+                if doc_context:
+                    api_messages.append({
+                        "role": "system",
+                        "content": (
+                            "The user has uploaded a document for reference. "
+                            "Use it when the question relates to it, otherwise answer freely.\n\n"
+                            f"{doc_context}"
+                        )
+                    })
+
+                for m in messages:
+                    api_messages.append({"role": m["role"], "content": m["content"]})
+
+                api_messages.append({"role": "user", "content": user_input})
 
                 response = requests.post(
-                    "http://localhost:11434/api/generate",
+                    "http://localhost:11434/api/chat",
                     json={
                         "model": model_name,
-                        "prompt": prompt,
-                        "stream": True
+                        "messages": api_messages,
+                        "stream": True,
+                        "options": {"temperature": temperature}
                     },
                     stream=True,
                     timeout=300
@@ -502,33 +592,27 @@ if user_input:
 
                     if line:
 
-                        decoded_line = line.decode("utf-8")
-
-                        data = json.loads(decoded_line)
-
-                        token = data.get("response", "")
-
+                        data = json.loads(line.decode("utf-8"))
+                        token = data.get("message", {}).get("content", "")
                         full_response += token
-
-                        response_placeholder.markdown(
-                            full_response + "▌"
-                        )
+                        response_placeholder.markdown(full_response + "▌")
 
                 full_response = full_response.replace("▌", "")
-
-                response_placeholder.markdown(
-                    f"🤖 {full_response}"
-                )
+                response_placeholder.markdown(f"🤖 {full_response}")
 
         except Exception as e:
 
             typing_placeholder.empty()
 
-            response_placeholder.error(
-                f"Error: {str(e)}"
-            )
+            err = str(e)
+            if "Connection refused" in err or "ConnectionError" in err:
+                response_placeholder.error(
+                    "❌ Cannot reach Ollama. Make sure it's running: `ollama serve`"
+                )
+            else:
+                response_placeholder.error(f"❌ Error: {err}")
 
-            full_response = str(e)
+            full_response = f"Error: {err}"
 
     save_message(
         st.session_state.current_chat,
