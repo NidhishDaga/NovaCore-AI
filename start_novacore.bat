@@ -10,7 +10,7 @@ start cmd /k "ollama serve"
 timeout /t 5
 
 echo Starting NovaCore AI...
-start cmd /k "python -m streamlit run app.py"
+start cmd /k "python -m streamlit run app.py --server.headless true"
 
 timeout /t 8
 

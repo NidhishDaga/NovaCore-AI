@@ -417,6 +417,8 @@ for message in messages:
         else:
             st.markdown(f"🤖 {message['content']}")
 
+st.markdown('<div id="chat-bottom"></div>', unsafe_allow_html=True)
+
 # =========================================================
 # SCROLL TO BOTTOM BUTTON
 # =========================================================
@@ -424,10 +426,10 @@ st.markdown("""
 <button class="scroll-to-bottom-btn"
     title="Jump to latest"
     onclick="
-        const el = window.parent.document.querySelector('[data-testid=stAppViewContainer]')
-            || window.parent.document.querySelector('.main')
-            || window.parent.document.body;
-        el.scrollTo({top: el.scrollHeight, behavior: 'smooth'});
+        var anchor = document.getElementById('chat-bottom');
+        if (anchor) {
+            anchor.scrollIntoView({behavior: 'smooth'});
+        }
     ">
     &#8595;
 </button>
