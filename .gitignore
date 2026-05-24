@@ -1,0 +1,12 @@
+# Database
+*.db
+
+# Temporary audio files
+temp_audio.wav
+
+# Python cache
+__pycache__/
+*.pyc
+
+# Environment
+.env
