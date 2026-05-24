@@ -224,6 +224,31 @@ div[class*="chatInput"] {
     backdrop-filter: blur(12px);
 }
 
+.scroll-to-bottom-btn {
+    position: fixed;
+    bottom: 100px;
+    right: 30px;
+    width: 46px;
+    height: 46px;
+    border-radius: 50%;
+    background: linear-gradient(135deg, #2563eb, #1d4ed8);
+    border: none;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 20px;
+    color: white;
+    z-index: 9999;
+    box-shadow: 0 4px 20px rgba(37,99,235,0.5);
+    transition: transform 0.2s ease, box-shadow 0.2s ease;
+}
+
+.scroll-to-bottom-btn:hover {
+    transform: scale(1.15);
+    box-shadow: 0 6px 28px rgba(37,99,235,0.75);
+}
+
 </style>
 """, unsafe_allow_html=True)
 
@@ -301,6 +326,9 @@ with st.sidebar:
         st.session_state.document_text = extracted_text[:15000]
 
         st.success("Document uploaded.")
+
+    else:
+        st.session_state.document_text = ""
 
     st.markdown("---")
 
@@ -390,6 +418,22 @@ for message in messages:
             st.markdown(f"🤖 {message['content']}")
 
 # =========================================================
+# SCROLL TO BOTTOM BUTTON
+# =========================================================
+st.markdown("""
+<button class="scroll-to-bottom-btn"
+    title="Jump to latest"
+    onclick="
+        const el = window.parent.document.querySelector('[data-testid=stAppViewContainer]')
+            || window.parent.document.querySelector('.main')
+            || window.parent.document.body;
+        el.scrollTo({top: el.scrollHeight, behavior: 'smooth'});
+    ">
+    &#8595;
+</button>
+""", unsafe_allow_html=True)
+
+# =========================================================
 # CHAT INPUT
 # =========================================================
 user_input = st.chat_input("Message NovaCore AI...")
@@ -475,7 +519,7 @@ if user_input:
 
                 doc_context = st.session_state.document_text
                 prompt = (
-                    f"Document context:\n{doc_context}\n\n{user_input}"
+                    f"The user has uploaded a document for reference. Use it if the question is related to it, otherwise answer freely from your own knowledge.\n\nDocument:\n{doc_context}\n\nUser question: {user_input}"
                     if doc_context else user_input
                 )
 
