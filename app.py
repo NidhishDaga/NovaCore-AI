@@ -429,24 +429,29 @@ st.markdown(
 components.html("""
 <script>
 (function() {
-    function init() {
-        var btn = window.parent.document.getElementById('nova-scroll-btn');
-        if (!btn) { setTimeout(init, 200); return; }
-        btn.onclick = function() {
-            var main = window.parent.document.querySelector('[data-testid="stMain"]')
-                    || window.parent.document.querySelector('section.main')
-                    || window.parent.document.querySelector('.main');
-            if (main) {
-                main.scrollTo({ top: main.scrollHeight, behavior: 'smooth' });
-            } else {
-                window.parent.scrollTo({ top: window.parent.document.body.scrollHeight, behavior: 'smooth' });
-            }
-        };
-    }
-    init();
+    var doc = window.parent.document;
+    if (doc._novaScrollReady) return;
+    doc._novaScrollReady = true;
+
+    doc.body.addEventListener('click', function(e) {
+        var target = e.target;
+        while (target && target.id !== 'nova-scroll-btn') {
+            target = target.parentElement;
+        }
+        if (!target) return;
+
+        var main = doc.querySelector('[data-testid="stMain"]')
+                || doc.querySelector('section.main')
+                || doc.querySelector('.main');
+        if (main) {
+            main.scrollTo({ top: main.scrollHeight, behavior: 'smooth' });
+        } else {
+            window.parent.scrollTo({ top: doc.documentElement.scrollHeight, behavior: 'smooth' });
+        }
+    });
 })();
 </script>
-""", height=0)
+""", height=1)
 
 # =========================================================
 # CHAT INPUT
