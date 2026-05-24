@@ -145,14 +145,21 @@ section[data-testid="stSidebar"] {
     color: #444 !important;
 }
 
-.stChatInputContainer {
-    border: none !important;
+:root {
+    --primary-color: #2563eb !important;
+}
+
+.stChatInputContainer,
+[data-testid="stChatInputContainer"],
+div[class*="chatInput"] {
+    border: 1px solid rgba(255,255,255,0.08) !important;
     outline: none !important;
     box-shadow: none !important;
 }
 
-.stChatInputContainer:focus-within {
-    border: none !important;
+.stChatInputContainer:focus-within,
+[data-testid="stChatInputContainer"]:focus-within {
+    border: 1px solid rgba(96,165,250,0.3) !important;
     outline: none !important;
     box-shadow: none !important;
 }
@@ -424,6 +431,7 @@ if user_input:
             # =========================================================
             if model_name == "llava:latest" and uploaded_image:
 
+                uploaded_image.seek(0)
                 image = Image.open(uploaded_image)
 
                 buffered = io.BytesIO()
