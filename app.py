@@ -137,10 +137,24 @@ section[data-testid="stSidebar"] {
     border-radius: 20px !important;
     padding: 16px !important;
     font-size: 16px !important;
+    outline: none !important;
+    box-shadow: none !important;
 }
 
 .stChatInput textarea::placeholder {
     color: #444 !important;
+}
+
+.stChatInputContainer {
+    border: none !important;
+    outline: none !important;
+    box-shadow: none !important;
+}
+
+.stChatInputContainer:focus-within {
+    border: none !important;
+    outline: none !important;
+    box-shadow: none !important;
 }
 
 .stButton button {
@@ -241,7 +255,7 @@ with st.sidebar:
         [
             "llama3",
             "deepseek-r1:latest",
-            "llava:7b",
+            "llava:latest",
             "mistral",
             "gemma",
             "phi3:latest"
@@ -408,7 +422,7 @@ if user_input:
             # =========================================================
             # LLAVA VISION AI
             # =========================================================
-            if model_name == "llava:7b" and uploaded_image:
+            if model_name == "llava:latest" and uploaded_image:
 
                 image = Image.open(uploaded_image)
 
@@ -423,7 +437,7 @@ if user_input:
                 response = requests.post(
                     "http://localhost:11434/api/chat",
                     json={
-                        "model": "llava:7b",
+                        "model": "llava:latest",
                         "messages": [
                             {
                                 "role": "user",
@@ -451,11 +465,17 @@ if user_input:
             # =========================================================
             else:
 
+                doc_context = st.session_state.document_text
+                prompt = (
+                    f"Document context:\n{doc_context}\n\n{user_input}"
+                    if doc_context else user_input
+                )
+
                 response = requests.post(
                     "http://localhost:11434/api/generate",
                     json={
                         "model": model_name,
-                        "prompt": user_input,
+                        "prompt": prompt,
                         "stream": True
                     },
                     stream=True,
