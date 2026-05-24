@@ -262,7 +262,7 @@ with st.sidebar:
         [
             "llama3",
             "deepseek-r1:latest",
-            "llava:latest",
+            "moondream",
             "mistral",
             "gemma",
             "phi3:latest"
@@ -360,7 +360,7 @@ if len(load_chat(st.session_state.current_chat)) == 0:
         st.markdown("""
         <div class="feature-card">
             <h3>👁️ Vision AI</h3>
-            <p>Analyze images using LLaVA.</p>
+            <p>Analyze images using Moondream.</p>
         </div>
         """, unsafe_allow_html=True)
 
@@ -429,7 +429,7 @@ if user_input:
             # =========================================================
             # LLAVA VISION AI
             # =========================================================
-            if model_name == "llava:latest" and uploaded_image:
+            if model_name == "moondream" and uploaded_image:
 
                 uploaded_image.seek(0)
                 image = Image.open(uploaded_image)
@@ -445,7 +445,7 @@ if user_input:
                 response = requests.post(
                     "http://localhost:11434/api/chat",
                     json={
-                        "model": "llava:latest",
+                        "model": "moondream",
                         "messages": [
                             {
                                 "role": "user",
