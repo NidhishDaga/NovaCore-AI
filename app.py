@@ -1,4 +1,5 @@
 import streamlit as st
+import streamlit.components.v1 as components
 import sqlite3
 import requests
 import json
@@ -417,23 +418,35 @@ for message in messages:
         else:
             st.markdown(f"🤖 {message['content']}")
 
-st.markdown('<div id="chat-bottom"></div>', unsafe_allow_html=True)
-
 # =========================================================
 # SCROLL TO BOTTOM BUTTON
 # =========================================================
-st.markdown("""
-<button class="scroll-to-bottom-btn"
-    title="Jump to latest"
-    onclick="
-        var anchor = document.getElementById('chat-bottom');
-        if (anchor) {
-            anchor.scrollIntoView({behavior: 'smooth'});
-        }
-    ">
-    &#8595;
-</button>
-""", unsafe_allow_html=True)
+st.markdown(
+    '<button id="nova-scroll-btn" class="scroll-to-bottom-btn" title="Jump to latest">&#8595;</button>',
+    unsafe_allow_html=True
+)
+
+components.html("""
+<script>
+(function() {
+    function init() {
+        var btn = window.parent.document.getElementById('nova-scroll-btn');
+        if (!btn) { setTimeout(init, 200); return; }
+        btn.onclick = function() {
+            var main = window.parent.document.querySelector('[data-testid="stMain"]')
+                    || window.parent.document.querySelector('section.main')
+                    || window.parent.document.querySelector('.main');
+            if (main) {
+                main.scrollTo({ top: main.scrollHeight, behavior: 'smooth' });
+            } else {
+                window.parent.scrollTo({ top: window.parent.document.body.scrollHeight, behavior: 'smooth' });
+            }
+        };
+    }
+    init();
+})();
+</script>
+""", height=0)
 
 # =========================================================
 # CHAT INPUT
