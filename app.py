@@ -20,13 +20,13 @@ st.set_page_config(
 # =========================================================
 # CONSTANTS
 # =========================================================
-VISION_MODEL = "llava-v1.5-7b-4096-preview"
+VISION_MODEL = "meta-llama/llama-4-scout-17b-16e-instruct"
 
 TEXT_MODELS = [
-    "llama3-8b-8192",
-    "deepseek-r1-distill-llama-70b",
-    "mistral-saba-24b",
-    "gemma2-9b-it",
+    "llama-3.3-70b-versatile",
+    "llama-3.1-8b-instant",
+    "openai/gpt-oss-120b",
+    "openai/gpt-oss-20b",
     VISION_MODEL,
 ]
 
@@ -385,21 +385,25 @@ with st.sidebar:
 
     st.markdown("### 🔑 Groq API Key")
 
-    api_key_input = st.text_input(
-        "",
-        type="password",
-        placeholder="gsk_...",
-        value=_secret_key,
-        help="Get your free key at console.groq.com",
-        key="groq_api_key_input"
-    )
-
-    api_key = api_key_input.strip() if api_key_input else _secret_key.strip()
-
-    if api_key:
-        st.success("🟢 API Key set")
+    if _secret_key:
+        # Key already loaded from Streamlit secrets — never expose it
+        api_key = _secret_key
+        st.success("🔒 API Key configured via Secrets")
     else:
-        st.error("🔴 No API key — enter one above")
+        # No secret found — let the user paste their key manually
+        api_key_input = st.text_input(
+            "",
+            type="password",
+            placeholder="gsk_...",
+            help="Get your free key at console.groq.com",
+            key="groq_api_key_input"
+        )
+        api_key = api_key_input.strip() if api_key_input else ""
+
+        if api_key:
+            st.success("🟢 API Key set")
+        else:
+            st.error("🔴 No API key — enter one above")
 
     st.markdown("---")
 
@@ -472,11 +476,11 @@ with st.sidebar:
         "",
         TEXT_MODELS,
         format_func=lambda m: {
-            "llama3-8b-8192":                   "⚡ LLaMA 3 8B",
-            "deepseek-r1-distill-llama-70b":    "🧠 DeepSeek R1 70B",
-            "mistral-saba-24b":                 "🌀 Mistral Saba 24B",
-            "gemma2-9b-it":                     "💎 Gemma 2 9B",
-            VISION_MODEL:                       "👁️ LLaVA Vision",
+            "llama-3.3-70b-versatile":                      "🦙 LLaMA 3.3 70B",
+            "llama-3.1-8b-instant":                         "⚡ LLaMA 3.1 8B",
+            "openai/gpt-oss-120b":                          "🧠 GPT OSS 120B",
+            "openai/gpt-oss-20b":                           "🤖 GPT OSS 20B",
+            VISION_MODEL:                                   "👁️ LLaMA 4 Scout (Vision)",
         }.get(m, m)
     )
 
