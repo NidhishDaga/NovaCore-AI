@@ -1,12 +1,15 @@
 import streamlit as st
 import sqlite3
+import json
 import base64
 import io
+import os
 from datetime import datetime
 from PIL import Image
 from PyPDF2 import PdfReader
 from streamlit_mic_recorder import speech_to_text
 from groq import Groq
+from streamlit_google_auth import Authenticate
 
 # =========================================================
 # PAGE CONFIG
@@ -31,6 +34,41 @@ TEXT_MODELS = [
 ]
 
 # =========================================================
+# GOOGLE AUTH — write credentials file from Streamlit secrets
+# =========================================================
+def _write_google_credentials():
+    try:
+        creds = {
+            "web": {
+                "client_id": st.secrets["GOOGLE_CLIENT_ID"],
+                "client_secret": st.secrets["GOOGLE_CLIENT_SECRET"],
+                "auth_uri": "https://accounts.google.com/o/oauth2/auth",
+                "token_uri": "https://oauth2.googleapis.com/token",
+                "redirect_uris": [
+                    st.secrets.get("REDIRECT_URI", "http://localhost:8501")
+                ]
+            }
+        }
+        path = "google_credentials.json"
+        with open(path, "w") as f:
+            json.dump(creds, f)
+        return path
+    except KeyError as e:
+        st.error(f"❌ Missing Streamlit secret: {e}. Add GOOGLE_CLIENT_ID, GOOGLE_CLIENT_SECRET and COOKIE_SECRET to your secrets.")
+        st.stop()
+
+creds_path = _write_google_credentials()
+
+authenticator = Authenticate(
+    secret_credentials_path=creds_path,
+    cookie_name="novacore_auth",
+    cookie_key=st.secrets.get("COOKIE_SECRET", "novacore_fallback_key"),
+    redirect_uri=st.secrets.get("REDIRECT_URI", "http://localhost:8501"),
+)
+
+authenticator.check_authentification()
+
+# =========================================================
 # DATABASE
 # =========================================================
 conn = sqlite3.connect("novacore_memory.db", check_same_thread=False)
@@ -38,36 +76,39 @@ cursor = conn.cursor()
 
 cursor.execute("""
 CREATE TABLE IF NOT EXISTS chats (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    chat_name TEXT,
-    role TEXT,
-    content TEXT,
-    timestamp TEXT DEFAULT ''
+    id        INTEGER PRIMARY KEY AUTOINCREMENT,
+    user_email TEXT,
+    chat_name  TEXT,
+    role       TEXT,
+    content    TEXT,
+    timestamp  TEXT DEFAULT ''
 )
 """)
 conn.commit()
 
-try:
-    cursor.execute("ALTER TABLE chats ADD COLUMN timestamp TEXT DEFAULT ''")
-    conn.commit()
-except Exception:
-    pass
+# Safe migrations for older DBs
+for col, defn in [("timestamp", "TEXT DEFAULT ''"), ("user_email", "TEXT DEFAULT ''")]:
+    try:
+        cursor.execute(f"ALTER TABLE chats ADD COLUMN {col} {defn}")
+        conn.commit()
+    except Exception:
+        pass
 
 # =========================================================
 # FUNCTIONS
 # =========================================================
-def save_message(chat_name, role, content):
+def save_message(user_email, chat_name, role, content):
     cursor.execute(
-        "INSERT INTO chats (chat_name, role, content, timestamp) VALUES (?, ?, ?, ?)",
-        (chat_name, role, content, datetime.now().strftime("%H:%M"))
+        "INSERT INTO chats (user_email, chat_name, role, content, timestamp) VALUES (?, ?, ?, ?, ?)",
+        (user_email, chat_name, role, content, datetime.now().strftime("%H:%M"))
     )
     conn.commit()
 
 
-def load_chat(chat_name):
+def load_chat(user_email, chat_name):
     cursor.execute(
-        "SELECT role, content, timestamp FROM chats WHERE chat_name=?",
-        (chat_name,)
+        "SELECT role, content, timestamp FROM chats WHERE user_email=? AND chat_name=?",
+        (user_email, chat_name)
     )
     rows = cursor.fetchall()
     return [
@@ -76,8 +117,11 @@ def load_chat(chat_name):
     ]
 
 
-def get_chat_names():
-    cursor.execute("SELECT DISTINCT chat_name FROM chats")
+def get_chat_names(user_email):
+    cursor.execute(
+        "SELECT DISTINCT chat_name FROM chats WHERE user_email=?",
+        (user_email,)
+    )
     rows = cursor.fetchall()
     names = [row[0] for row in rows]
     if "New Chat" not in names:
@@ -85,16 +129,19 @@ def get_chat_names():
     return names
 
 
-def rename_chat(old_name, new_name):
+def rename_chat(user_email, old_name, new_name):
     cursor.execute(
-        "UPDATE chats SET chat_name=? WHERE chat_name=?",
-        (new_name, old_name)
+        "UPDATE chats SET chat_name=? WHERE user_email=? AND chat_name=?",
+        (new_name, user_email, old_name)
     )
     conn.commit()
 
 
-def clear_chat(chat_name):
-    cursor.execute("DELETE FROM chats WHERE chat_name=?", (chat_name,))
+def clear_chat(user_email, chat_name):
+    cursor.execute(
+        "DELETE FROM chats WHERE user_email=? AND chat_name=?",
+        (user_email, chat_name)
+    )
     conn.commit()
 
 
@@ -110,7 +157,7 @@ def classify_error(err: str) -> str:
         return "❌ Rate limit reached. Please wait a moment and try again."
     if "connection" in e or "network" in e or "timeout" in e:
         return "❌ Connection error. Please check your internet connection."
-    if "model_not_found" in e or "404" in e:
+    if "model_not_found" in e or "404" in e or "decommissioned" in e:
         return "❌ Model not available. It may have been deprecated by Groq."
     return f"❌ Error: {err}"
 
@@ -125,8 +172,6 @@ if "document_text" not in st.session_state:
 
 # =========================================================
 # DESIGN SYSTEM — Deep Space Tech
-# Palette: Electric Cyan #22d3ee · Soft Violet #a78bfa
-#          Space Navy  #020817  · Glass surfaces
 # =========================================================
 st.markdown("""
 <style>
@@ -309,17 +354,8 @@ div[class*="chatInput"] {
     box-shadow: 0 12px 40px rgba(34, 211, 238, 0.1);
 }
 
-.feature-card h3 {
-    color: #e2e8f0;
-    margin-bottom: 8px;
-    font-size: 18px;
-}
-
-.feature-card p {
-    color: rgba(148, 163, 184, 0.85);
-    font-size: 14px;
-    margin: 0;
-}
+.feature-card h3 { color: #e2e8f0; margin-bottom: 8px; font-size: 18px; }
+.feature-card p  { color: rgba(148, 163, 184, 0.85); font-size: 14px; margin: 0; }
 
 /* ── FOOTER ───────────────────────────────────────── */
 .nova-footer {
@@ -332,11 +368,9 @@ div[class*="chatInput"] {
     border-top: 1px solid rgba(34, 211, 238, 0.06);
 }
 
-.nova-footer span {
-    color: rgba(34, 211, 238, 0.5);
-}
+.nova-footer span { color: rgba(34, 211, 238, 0.5); }
 
-/* ── ALERTS / STATUS ──────────────────────────────── */
+/* ── ALERTS ───────────────────────────────────────── */
 .stSuccess {
     background: rgba(34, 211, 238, 0.07) !important;
     border: 1px solid rgba(34, 211, 238, 0.2) !important;
@@ -364,12 +398,150 @@ div[class*="chatInput"] {
     border-radius: 10px !important;
 }
 
+/* ── LOGIN PAGE ───────────────────────────────────── */
+.login-wrapper {
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    min-height: 70vh;
+    padding: 40px 20px;
+}
+
+.login-card {
+    background: rgba(255, 255, 255, 0.03);
+    border: 1px solid rgba(34, 211, 238, 0.15);
+    border-radius: 28px;
+    padding: 52px 48px;
+    text-align: center;
+    backdrop-filter: blur(20px);
+    max-width: 460px;
+    width: 100%;
+    box-shadow: 0 24px 80px rgba(0, 0, 0, 0.4), 0 0 60px rgba(34, 211, 238, 0.05);
+}
+
+.login-logo {
+    font-size: 56px;
+    margin-bottom: 16px;
+    filter: drop-shadow(0 0 20px rgba(34, 211, 238, 0.4));
+}
+
+.login-title {
+    font-size: 38px;
+    font-weight: 800;
+    letter-spacing: -1px;
+    background: linear-gradient(135deg, #22d3ee 0%, #a78bfa 100%);
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+    margin-bottom: 8px;
+}
+
+.login-subtitle {
+    color: rgba(167, 139, 250, 0.7);
+    font-size: 15px;
+    margin-bottom: 10px;
+}
+
+.login-desc {
+    color: rgba(148, 163, 184, 0.7);
+    font-size: 13px;
+    line-height: 1.6;
+    margin-bottom: 32px;
+}
+
+.login-divider {
+    height: 1px;
+    background: rgba(34, 211, 238, 0.08);
+    margin: 28px 0;
+}
+
+/* Style the Google login link button */
+[data-testid="stLinkButton"] a {
+    background: linear-gradient(135deg, #0891b2, #6366f1) !important;
+    color: white !important;
+    border-radius: 14px !important;
+    padding: 14px 28px !important;
+    font-weight: 700 !important;
+    font-size: 15px !important;
+    text-decoration: none !important;
+    border: 1px solid rgba(34, 211, 238, 0.3) !important;
+    display: inline-block !important;
+    transition: opacity 0.2s !important;
+}
+
+/* ── USER PROFILE CARD ────────────────────────────── */
+.user-profile-card {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    padding: 12px 14px;
+    background: rgba(34, 211, 238, 0.04);
+    border: 1px solid rgba(34, 211, 238, 0.12);
+    border-radius: 14px;
+    margin-bottom: 4px;
+}
+
+.user-profile-card img {
+    width: 40px;
+    height: 40px;
+    border-radius: 50%;
+    border: 2px solid rgba(34, 211, 238, 0.35);
+}
+
+.user-name  { font-weight: 600; font-size: 14px; color: #e2e8f0; }
+.user-email { font-size: 11px; color: rgba(34, 211, 238, 0.55); }
+
 </style>
 """, unsafe_allow_html=True)
 
 # =========================================================
-# RESOLVE API KEY
-# (Streamlit secrets take priority; sidebar input is fallback)
+# AUTHENTICATION GATE
+# =========================================================
+if not st.session_state.get("connected", False):
+
+    st.markdown(
+        '<div class="main-title" style="margin-top:40px;">NovaCore AI</div>',
+        unsafe_allow_html=True
+    )
+    st.markdown(
+        '<div class="subtitle">Premium Multimodal AI Assistant Platform</div>',
+        unsafe_allow_html=True
+    )
+
+    col_l, col_c, col_r = st.columns([1, 1.4, 1])
+    with col_c:
+        st.markdown("""
+        <div class="login-card">
+            <div class="login-logo">🧠</div>
+            <div class="login-title">Welcome back</div>
+            <div class="login-subtitle">Sign in to your personal workspace</div>
+            <div class="login-desc">
+                Your chats, documents, and AI conversations are
+                private and tied to your Google account.
+            </div>
+            <div class="login-divider"></div>
+        </div>
+        """, unsafe_allow_html=True)
+
+        authorization_url = authenticator.get_authorization_url()
+        st.link_button("🔐  Sign in with Google", authorization_url, use_container_width=True)
+
+    st.markdown("""
+    <div class="nova-footer" style="margin-top:60px;">
+        ⚡ <span>NovaCore AI</span> &nbsp;·&nbsp; Powered by Groq &nbsp;·&nbsp; Built with Streamlit
+    </div>
+    """, unsafe_allow_html=True)
+
+    st.stop()
+
+# =========================================================
+# USER INFO (only reached when logged in)
+# =========================================================
+user_email   = st.session_state["user_info"]["email"]
+user_name    = st.session_state["user_info"]["name"]
+user_picture = st.session_state["user_info"].get("picture", "")
+
+# =========================================================
+# RESOLVE GROQ API KEY
 # =========================================================
 try:
     _secret_key = st.secrets.get("GROQ_API_KEY", "")
@@ -381,16 +553,43 @@ except Exception:
 # =========================================================
 with st.sidebar:
 
-    st.title("⚙️ NovaCore")
+    # ── User profile ──────────────────────────────────
+    if user_picture:
+        st.markdown(f"""
+        <div class="user-profile-card">
+            <img src="{user_picture}" alt="avatar">
+            <div>
+                <div class="user-name">{user_name}</div>
+                <div class="user-email">{user_email}</div>
+            </div>
+        </div>
+        """, unsafe_allow_html=True)
+    else:
+        st.markdown(f"""
+        <div class="user-profile-card">
+            <div style="width:40px;height:40px;border-radius:50%;background:linear-gradient(135deg,#0891b2,#6366f1);display:flex;align-items:center;justify-content:center;font-size:18px;">
+                {user_name[0].upper()}
+            </div>
+            <div>
+                <div class="user-name">{user_name}</div>
+                <div class="user-email">{user_email}</div>
+            </div>
+        </div>
+        """, unsafe_allow_html=True)
 
+    if st.button("🚪 Logout", use_container_width=True):
+        authenticator.logout()
+        st.rerun()
+
+    st.markdown("---")
+
+    # ── Groq API key ──────────────────────────────────
     st.markdown("### 🔑 Groq API Key")
 
     if _secret_key:
-        # Key already loaded from Streamlit secrets — never expose it
         api_key = _secret_key
         st.success("🔒 API Key configured via Secrets")
     else:
-        # No secret found — let the user paste their key manually
         api_key_input = st.text_input(
             "",
             type="password",
@@ -399,7 +598,6 @@ with st.sidebar:
             key="groq_api_key_input"
         )
         api_key = api_key_input.strip() if api_key_input else ""
-
         if api_key:
             st.success("🟢 API Key set")
         else:
@@ -407,14 +605,15 @@ with st.sidebar:
 
     st.markdown("---")
 
+    # ── Chat management ───────────────────────────────
     if st.button("➕ New Chat", use_container_width=True):
-        new_name = f"Chat_{len(get_chat_names()) + 1}"
+        new_name = f"Chat_{len(get_chat_names(user_email)) + 1}"
         st.session_state.current_chat = new_name
         st.rerun()
 
     st.markdown("### 💬 Chats")
 
-    chat_names = get_chat_names()
+    chat_names = get_chat_names(user_email)
 
     selected_chat = st.radio(
         "",
@@ -436,7 +635,7 @@ with st.sidebar:
     if st.button("✏️ Rename", use_container_width=True):
         new_chat_name = new_chat_name.strip()
         if new_chat_name and new_chat_name != st.session_state.current_chat:
-            rename_chat(st.session_state.current_chat, new_chat_name)
+            rename_chat(user_email, st.session_state.current_chat, new_chat_name)
             st.session_state.current_chat = new_chat_name
             st.rerun()
 
@@ -444,16 +643,16 @@ with st.sidebar:
 
     with col1:
         if st.button("🗑️ Clear", use_container_width=True):
-            clear_chat(st.session_state.current_chat)
+            clear_chat(user_email, st.session_state.current_chat)
             st.rerun()
 
     with col2:
         if st.button("❌ Delete", use_container_width=True):
-            clear_chat(st.session_state.current_chat)
+            clear_chat(user_email, st.session_state.current_chat)
             st.session_state.current_chat = "New Chat"
             st.rerun()
 
-    export_msgs = load_chat(st.session_state.current_chat)
+    export_msgs = load_chat(user_email, st.session_state.current_chat)
     if export_msgs:
         export_text = f"# {st.session_state.current_chat}\n\n"
         for m in export_msgs:
@@ -470,17 +669,18 @@ with st.sidebar:
 
     st.markdown("---")
 
+    # ── Model selection ───────────────────────────────
     st.markdown("### 🤖 Active Model")
 
     model_name = st.radio(
         "",
         TEXT_MODELS,
         format_func=lambda m: {
-            "llama-3.3-70b-versatile":                      "🦙 LLaMA 3.3 70B",
-            "llama-3.1-8b-instant":                         "⚡ LLaMA 3.1 8B",
-            "openai/gpt-oss-120b":                          "🧠 GPT OSS 120B",
-            "openai/gpt-oss-20b":                           "🤖 GPT OSS 20B",
-            VISION_MODEL:                                   "👁️ LLaMA 4 Scout (Vision)",
+            "llama-3.3-70b-versatile":                     "🦙 LLaMA 3.3 70B",
+            "llama-3.1-8b-instant":                        "⚡ LLaMA 3.1 8B",
+            "openai/gpt-oss-120b":                         "🧠 GPT OSS 120B",
+            "openai/gpt-oss-20b":                          "🤖 GPT OSS 20B",
+            VISION_MODEL:                                  "👁️ LLaMA 4 Scout (Vision)",
         }.get(m, m)
     )
 
@@ -488,32 +688,23 @@ with st.sidebar:
 
     st.markdown("---")
 
+    # ── File uploads ──────────────────────────────────
     st.markdown("### 📄 Upload PDF/TXT")
 
-    uploaded_file = st.file_uploader(
-        "",
-        type=["pdf", "txt"]
-    )
+    uploaded_file = st.file_uploader("", type=["pdf", "txt"])
 
     if uploaded_file:
-
         extracted_text = ""
-
         if uploaded_file.type == "application/pdf":
-
             pdf_reader = PdfReader(uploaded_file)
-
             for page in pdf_reader.pages:
                 text = page.extract_text()
                 if text:
                     extracted_text += text + "\n"
-
         else:
             extracted_text = uploaded_file.read().decode("utf-8")
-
         st.session_state.document_text = extracted_text[:15000]
         st.success("Document uploaded.")
-
     else:
         st.session_state.document_text = ""
 
@@ -522,9 +713,7 @@ with st.sidebar:
     st.markdown("### 🖼 Upload Image")
 
     uploaded_image = st.file_uploader(
-        "",
-        type=["png", "jpg", "jpeg"],
-        key="image_uploader"
+        "", type=["png", "jpg", "jpeg"], key="image_uploader"
     )
 
     if uploaded_image:
@@ -546,46 +735,33 @@ with st.sidebar:
 # =========================================================
 # HEADER
 # =========================================================
-st.markdown(
-    '<div class="main-title">NovaCore AI</div>',
-    unsafe_allow_html=True
-)
-
-st.markdown(
-    '<div class="subtitle">Premium Multimodal AI Assistant Platform</div>',
-    unsafe_allow_html=True
-)
+st.markdown('<div class="main-title">NovaCore AI</div>', unsafe_allow_html=True)
+st.markdown('<div class="subtitle">Premium Multimodal AI Assistant Platform</div>', unsafe_allow_html=True)
 
 # =========================================================
-# GATE — require API key before showing chat
+# API KEY GATE
 # =========================================================
 if not api_key:
     st.markdown("""
     <div style="
-        text-align: center;
-        padding: 60px 20px;
-        background: rgba(34,211,238,0.04);
-        border: 1px solid rgba(34,211,238,0.12);
-        border-radius: 24px;
-        margin-top: 20px;
-    ">
-        <div style="font-size:48px; margin-bottom:16px;">🔑</div>
-        <h2 style="color:#22d3ee; margin-bottom:10px;">API Key Required</h2>
-        <p style="color:#94a3b8; font-size:16px; max-width:440px; margin:0 auto;">
-            Enter your <strong style="color:#e2e8f0;">Groq API key</strong> in the sidebar
-            to start chatting.<br><br>
-            Get a free key at
-            <a href="https://console.groq.com" target="_blank"
-               style="color:#22d3ee;">console.groq.com</a>
+        text-align:center; padding:60px 20px;
+        background:rgba(34,211,238,0.04);
+        border:1px solid rgba(34,211,238,0.12);
+        border-radius:24px; margin-top:20px;">
+        <div style="font-size:48px;margin-bottom:16px;">🔑</div>
+        <h2 style="color:#22d3ee;margin-bottom:10px;">API Key Required</h2>
+        <p style="color:#94a3b8;font-size:16px;max-width:440px;margin:0 auto;">
+            Enter your <strong style="color:#e2e8f0;">Groq API key</strong> in the sidebar to start chatting.<br><br>
+            Get a free key at <a href="https://console.groq.com" target="_blank" style="color:#22d3ee;">console.groq.com</a>
         </p>
     </div>
     """, unsafe_allow_html=True)
     st.stop()
 
 # =========================================================
-# FEATURE CARDS  (shown only on empty chats)
+# FEATURE CARDS (empty chat only)
 # =========================================================
-if len(load_chat(st.session_state.current_chat)) == 0:
+if len(load_chat(user_email, st.session_state.current_chat)) == 0:
 
     col1, col2, col3 = st.columns(3)
 
@@ -601,7 +777,7 @@ if len(load_chat(st.session_state.current_chat)) == 0:
         st.markdown("""
         <div class="feature-card">
             <h3>👁️ Vision AI</h3>
-            <p>Analyse images and photos using LLaVA — select the Vision model.</p>
+            <p>Analyse images and photos — select the LLaMA 4 Scout Vision model.</p>
         </div>
         """, unsafe_allow_html=True)
 
@@ -614,22 +790,16 @@ if len(load_chat(st.session_state.current_chat)) == 0:
         """, unsafe_allow_html=True)
 
 # =========================================================
-# LOAD CHAT
+# LOAD & DISPLAY CHAT
 # =========================================================
-messages = load_chat(st.session_state.current_chat)
+messages = load_chat(user_email, st.session_state.current_chat)
 
-# =========================================================
-# DISPLAY CHAT
-# =========================================================
 for message in messages:
-
     with st.chat_message(message["role"]):
-
         if message["role"] == "user":
             st.markdown(f"🧑 {message['content']}")
         else:
             st.markdown(f"🤖 {message['content']}")
-
         if message.get("timestamp"):
             st.caption(message["timestamp"])
 
@@ -646,21 +816,14 @@ if voice_text:
 # =========================================================
 if user_input:
 
-    # Auto-name new chats from the first message
-    if st.session_state.current_chat == "New Chat" and len(messages) == 0:
-        auto_name = user_input[:40].strip().replace("\n", " ")
-        if len(user_input) > 40:
-            auto_name += "..."
-        st.session_state.current_chat = auto_name
-
-    save_message(st.session_state.current_chat, "user", user_input)
+    save_message(user_email, st.session_state.current_chat, "user", user_input)
 
     with st.chat_message("user"):
         st.markdown(f"🧑 {user_input}")
 
     with st.chat_message("assistant"):
 
-        typing_placeholder = st.empty()
+        typing_placeholder  = st.empty()
         response_placeholder = st.empty()
 
         typing_placeholder.markdown("""
@@ -674,12 +837,9 @@ if user_input:
         full_response = ""
 
         try:
-
             client = get_groq_client(api_key)
 
-            # =========================================================
-            # VISION AI — LLaVA with image
-            # =========================================================
+            # ── Vision AI ────────────────────────────────
             if model_name == VISION_MODEL and uploaded_image:
 
                 uploaded_image.seek(0)
@@ -696,12 +856,8 @@ if user_input:
                     "role": "user",
                     "content": [
                         {"type": "text", "text": user_input},
-                        {
-                            "type": "image_url",
-                            "image_url": {
-                                "url": f"data:image/png;base64,{image_base64}"
-                            }
-                        }
+                        {"type": "image_url",
+                         "image_url": {"url": f"data:image/png;base64,{image_base64}"}}
                     ]
                 })
 
@@ -712,17 +868,13 @@ if user_input:
                 )
 
                 full_response = response.choices[0].message.content
-
                 typing_placeholder.empty()
                 response_placeholder.markdown(f"🤖 {full_response}")
 
-            # =========================================================
-            # TEXT MODELS — full conversation history + streaming
-            # =========================================================
+            # ── Text models with streaming ────────────────
             else:
 
                 doc_context = st.session_state.document_text
-
                 api_messages = []
 
                 if doc_context:
@@ -758,16 +910,11 @@ if user_input:
                 response_placeholder.markdown(f"🤖 {full_response}")
 
         except Exception as e:
-
             typing_placeholder.empty()
             response_placeholder.error(classify_error(str(e)))
             full_response = f"Error: {e}"
 
-    save_message(
-        st.session_state.current_chat,
-        "assistant",
-        full_response
-    )
+    save_message(user_email, st.session_state.current_chat, "assistant", full_response)
 
 # =========================================================
 # FOOTER
