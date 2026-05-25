@@ -1,13 +1,12 @@
 import streamlit as st
 import sqlite3
-import requests
-import json
 import base64
 import io
 from datetime import datetime
 from PIL import Image
 from PyPDF2 import PdfReader
 from streamlit_mic_recorder import speech_to_text
+from groq import Groq
 
 # =========================================================
 # PAGE CONFIG
@@ -17,6 +16,19 @@ st.set_page_config(
     page_icon="🧠",
     layout="wide"
 )
+
+# =========================================================
+# CONSTANTS
+# =========================================================
+VISION_MODEL = "llava-v1.5-7b-4096-preview"
+
+TEXT_MODELS = [
+    "llama3-8b-8192",
+    "deepseek-r1-distill-llama-70b",
+    "mistral-saba-24b",
+    "gemma2-9b-it",
+    VISION_MODEL,
+]
 
 # =========================================================
 # DATABASE
@@ -86,12 +98,21 @@ def clear_chat(chat_name):
     conn.commit()
 
 
-def check_ollama():
-    try:
-        r = requests.get("http://localhost:11434/api/tags", timeout=2)
-        return r.status_code == 200
-    except Exception:
-        return False
+def get_groq_client(api_key):
+    return Groq(api_key=api_key)
+
+
+def classify_error(err: str) -> str:
+    e = err.lower()
+    if "invalid_api_key" in e or "authentication" in e or "api key" in e or "401" in e:
+        return "❌ Invalid API key. Please check your Groq API key in the sidebar."
+    if "rate_limit" in e or "429" in e or "quota" in e:
+        return "❌ Rate limit reached. Please wait a moment and try again."
+    if "connection" in e or "network" in e or "timeout" in e:
+        return "❌ Connection error. Please check your internet connection."
+    if "model_not_found" in e or "404" in e:
+        return "❌ Model not available. It may have been deprecated by Groq."
+    return f"❌ Error: {err}"
 
 # =========================================================
 # SESSION STATE
@@ -335,8 +356,25 @@ div[class*="chatInput"] {
     font-size: 11px !important;
 }
 
+/* ── API KEY INPUT ────────────────────────────────── */
+[data-testid="stTextInput"] input[type="password"] {
+    background: rgba(34, 211, 238, 0.05) !important;
+    border: 1px solid rgba(34, 211, 238, 0.2) !important;
+    color: #e2e8f0 !important;
+    border-radius: 10px !important;
+}
+
 </style>
 """, unsafe_allow_html=True)
+
+# =========================================================
+# RESOLVE API KEY
+# (Streamlit secrets take priority; sidebar input is fallback)
+# =========================================================
+try:
+    _secret_key = st.secrets.get("GROQ_API_KEY", "")
+except Exception:
+    _secret_key = ""
 
 # =========================================================
 # SIDEBAR
@@ -345,10 +383,25 @@ with st.sidebar:
 
     st.title("⚙️ NovaCore")
 
-    if check_ollama():
-        st.success("🟢 Ollama Online")
+    st.markdown("### 🔑 Groq API Key")
+
+    api_key_input = st.text_input(
+        "",
+        type="password",
+        placeholder="gsk_...",
+        value=_secret_key,
+        help="Get your free key at console.groq.com",
+        key="groq_api_key_input"
+    )
+
+    api_key = api_key_input.strip() if api_key_input else _secret_key.strip()
+
+    if api_key:
+        st.success("🟢 API Key set")
     else:
-        st.error("🔴 Ollama Offline — run `ollama serve`")
+        st.error("🔴 No API key — enter one above")
+
+    st.markdown("---")
 
     if st.button("➕ New Chat", use_container_width=True):
         new_name = f"Chat_{len(get_chat_names()) + 1}"
@@ -417,14 +470,14 @@ with st.sidebar:
 
     model_name = st.radio(
         "",
-        [
-            "llama3",
-            "deepseek-r1:latest",
-            "moondream",
-            "mistral",
-            "gemma",
-            "phi3:latest"
-        ]
+        TEXT_MODELS,
+        format_func=lambda m: {
+            "llama3-8b-8192":                   "⚡ LLaMA 3 8B",
+            "deepseek-r1-distill-llama-70b":    "🧠 DeepSeek R1 70B",
+            "mistral-saba-24b":                 "🌀 Mistral Saba 24B",
+            "gemma2-9b-it":                     "💎 Gemma 2 9B",
+            VISION_MODEL:                       "👁️ LLaVA Vision",
+        }.get(m, m)
     )
 
     st.success(f"🟢 {model_name} Active")
@@ -447,9 +500,7 @@ with st.sidebar:
             pdf_reader = PdfReader(uploaded_file)
 
             for page in pdf_reader.pages:
-
                 text = page.extract_text()
-
                 if text:
                     extracted_text += text + "\n"
 
@@ -457,7 +508,6 @@ with st.sidebar:
             extracted_text = uploaded_file.read().decode("utf-8")
 
         st.session_state.document_text = extracted_text[:15000]
-
         st.success("Document uploaded.")
 
     else:
@@ -503,7 +553,33 @@ st.markdown(
 )
 
 # =========================================================
-# FEATURE CARDS
+# GATE — require API key before showing chat
+# =========================================================
+if not api_key:
+    st.markdown("""
+    <div style="
+        text-align: center;
+        padding: 60px 20px;
+        background: rgba(34,211,238,0.04);
+        border: 1px solid rgba(34,211,238,0.12);
+        border-radius: 24px;
+        margin-top: 20px;
+    ">
+        <div style="font-size:48px; margin-bottom:16px;">🔑</div>
+        <h2 style="color:#22d3ee; margin-bottom:10px;">API Key Required</h2>
+        <p style="color:#94a3b8; font-size:16px; max-width:440px; margin:0 auto;">
+            Enter your <strong style="color:#e2e8f0;">Groq API key</strong> in the sidebar
+            to start chatting.<br><br>
+            Get a free key at
+            <a href="https://console.groq.com" target="_blank"
+               style="color:#22d3ee;">console.groq.com</a>
+        </p>
+    </div>
+    """, unsafe_allow_html=True)
+    st.stop()
+
+# =========================================================
+# FEATURE CARDS  (shown only on empty chats)
 # =========================================================
 if len(load_chat(st.session_state.current_chat)) == 0:
 
@@ -521,7 +597,7 @@ if len(load_chat(st.session_state.current_chat)) == 0:
         st.markdown("""
         <div class="feature-card">
             <h3>👁️ Vision AI</h3>
-            <p>Analyse images, photos and diagrams using Moondream.</p>
+            <p>Analyse images and photos using LLaVA — select the Vision model.</p>
         </div>
         """, unsafe_allow_html=True)
 
@@ -573,11 +649,7 @@ if user_input:
             auto_name += "..."
         st.session_state.current_chat = auto_name
 
-    save_message(
-        st.session_state.current_chat,
-        "user",
-        user_input
-    )
+    save_message(st.session_state.current_chat, "user", user_input)
 
     with st.chat_message("user"):
         st.markdown(f"🧑 {user_input}")
@@ -595,48 +667,53 @@ if user_input:
         </div>
         """, unsafe_allow_html=True)
 
+        full_response = ""
+
         try:
 
+            client = get_groq_client(api_key)
+
             # =========================================================
-            # VISION AI — moondream with image
+            # VISION AI — LLaVA with image
             # =========================================================
-            if model_name == "moondream" and uploaded_image:
+            if model_name == VISION_MODEL and uploaded_image:
 
                 uploaded_image.seek(0)
                 image = Image.open(uploaded_image)
-
                 buffered = io.BytesIO()
                 image.save(buffered, format="PNG")
                 image_base64 = base64.b64encode(buffered.getvalue()).decode("utf-8")
 
-                api_messages = [
+                vision_messages = [
                     {"role": m["role"], "content": m["content"]}
                     for m in messages
                 ]
-                api_messages.append({
+                vision_messages.append({
                     "role": "user",
-                    "content": user_input,
-                    "images": [image_base64]
+                    "content": [
+                        {"type": "text", "text": user_input},
+                        {
+                            "type": "image_url",
+                            "image_url": {
+                                "url": f"data:image/png;base64,{image_base64}"
+                            }
+                        }
+                    ]
                 })
 
-                response = requests.post(
-                    "http://localhost:11434/api/chat",
-                    json={
-                        "model": "moondream",
-                        "messages": api_messages,
-                        "stream": False
-                    },
-                    timeout=300
+                response = client.chat.completions.create(
+                    model=VISION_MODEL,
+                    messages=vision_messages,
+                    max_tokens=1024
                 )
 
-                data = response.json()
-                full_response = data["message"]["content"]
+                full_response = response.choices[0].message.content
 
                 typing_placeholder.empty()
                 response_placeholder.markdown(f"🤖 {full_response}")
 
             # =========================================================
-            # TEXT MODELS — full conversation history
+            # TEXT MODELS — full conversation history + streaming
             # =========================================================
             else:
 
@@ -659,28 +736,18 @@ if user_input:
 
                 api_messages.append({"role": "user", "content": user_input})
 
-                response = requests.post(
-                    "http://localhost:11434/api/chat",
-                    json={
-                        "model": model_name,
-                        "messages": api_messages,
-                        "stream": True
-                    },
-                    stream=True,
-                    timeout=300
+                stream = client.chat.completions.create(
+                    model=model_name,
+                    messages=api_messages,
+                    stream=True
                 )
 
                 typing_placeholder.empty()
 
-                full_response = ""
-
-                for line in response.iter_lines():
-
-                    if line:
-
-                        data = json.loads(line.decode("utf-8"))
-                        token = data.get("message", {}).get("content", "")
-                        full_response += token
+                for chunk in stream:
+                    delta = chunk.choices[0].delta
+                    if delta.content:
+                        full_response += delta.content
                         response_placeholder.markdown(full_response + "▌")
 
                 full_response = full_response.replace("▌", "")
@@ -689,16 +756,8 @@ if user_input:
         except Exception as e:
 
             typing_placeholder.empty()
-
-            err = str(e)
-            if "Connection refused" in err or "ConnectionError" in err:
-                response_placeholder.error(
-                    "❌ Cannot reach Ollama. Make sure it's running: `ollama serve`"
-                )
-            else:
-                response_placeholder.error(f"❌ Error: {err}")
-
-            full_response = f"Error: {err}"
+            response_placeholder.error(classify_error(str(e)))
+            full_response = f"Error: {e}"
 
     save_message(
         st.session_state.current_chat,
@@ -711,6 +770,6 @@ if user_input:
 # =========================================================
 st.markdown("""
 <div class="nova-footer">
-    ⚡ <span>NovaCore AI</span> &nbsp;·&nbsp; Powered by Ollama &nbsp;·&nbsp; Built with Streamlit
+    ⚡ <span>NovaCore AI</span> &nbsp;·&nbsp; Powered by Groq &nbsp;·&nbsp; Built with Streamlit
 </div>
 """, unsafe_allow_html=True)
