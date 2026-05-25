@@ -35,7 +35,6 @@ CREATE TABLE IF NOT EXISTS chats (
 """)
 conn.commit()
 
-# Safe migration: add timestamp to existing databases without it
 try:
     cursor.execute("ALTER TABLE chats ADD COLUMN timestamp TEXT DEFAULT ''")
     conn.commit()
@@ -104,17 +103,20 @@ if "document_text" not in st.session_state:
     st.session_state.document_text = ""
 
 # =========================================================
-# PREMIUM CSS
+# DESIGN SYSTEM — Deep Space Tech
+# Palette: Electric Cyan #22d3ee · Soft Violet #a78bfa
+#          Space Navy  #020817  · Glass surfaces
 # =========================================================
 st.markdown("""
 <style>
 
-@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap');
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&display=swap');
 
+/* ── BASE ─────────────────────────────────────────── */
 html, body, [class*="css"] {
     font-family: 'Inter', sans-serif;
-    background: linear-gradient(135deg,#020617 0%,#0f172a 100%);
-    color: white;
+    background: linear-gradient(160deg, #020817 0%, #0a0f1e 55%, #0d1527 100%);
+    color: #e2e8f0;
 }
 
 .block-container {
@@ -122,95 +124,140 @@ html, body, [class*="css"] {
     padding-top: 1rem;
 }
 
+/* ── SIDEBAR ──────────────────────────────────────── */
 section[data-testid="stSidebar"] {
-    background: rgba(10,15,30,0.85);
-    backdrop-filter: blur(24px);
-    border-right: 1px solid rgba(255,255,255,0.08);
+    background: rgba(5, 8, 22, 0.96) !important;
+    backdrop-filter: blur(28px);
+    border-right: 1px solid rgba(34, 211, 238, 0.1);
 }
 
+section[data-testid="stSidebar"] h3 {
+    color: #22d3ee !important;
+    font-size: 11px !important;
+    font-weight: 700 !important;
+    letter-spacing: 0.12em !important;
+    text-transform: uppercase !important;
+    margin-top: 4px !important;
+}
+
+section[data-testid="stSidebar"] .stMarkdown hr {
+    border-color: rgba(34, 211, 238, 0.08) !important;
+}
+
+/* ── TITLE & SUBTITLE ─────────────────────────────── */
 .main-title {
     text-align: center;
-    font-size: 70px;
+    font-size: 72px;
     font-weight: 800;
-    background: linear-gradient(90deg,#ffffff,#60a5fa);
+    letter-spacing: -1px;
+    background: linear-gradient(135deg, #22d3ee 0%, #a78bfa 60%, #818cf8 100%);
     -webkit-background-clip: text;
     -webkit-text-fill-color: transparent;
-    margin-bottom: 0;
+    filter: drop-shadow(0 0 40px rgba(34, 211, 238, 0.25));
+    margin-bottom: 4px;
 }
 
 .subtitle {
     text-align: center;
-    color: #94a3b8;
-    margin-bottom: 30px;
-    font-size: 18px;
+    color: rgba(167, 139, 250, 0.75);
+    margin-bottom: 36px;
+    font-size: 17px;
+    font-weight: 400;
+    letter-spacing: 0.03em;
 }
 
+/* ── BUTTONS ──────────────────────────────────────── */
+.stButton button {
+    background: linear-gradient(135deg, #0891b2 0%, #6366f1 100%) !important;
+    color: #ffffff !important;
+    border-radius: 12px !important;
+    border: 1px solid rgba(34, 211, 238, 0.2) !important;
+    font-weight: 600 !important;
+    letter-spacing: 0.02em !important;
+    transition: opacity 0.2s ease, transform 0.15s ease !important;
+}
+
+.stButton button:hover {
+    opacity: 0.88 !important;
+    transform: translateY(-1px) !important;
+}
+
+/* ── DOWNLOAD BUTTON ──────────────────────────────── */
+[data-testid="stDownloadButton"] button {
+    background: rgba(34, 211, 238, 0.08) !important;
+    color: #22d3ee !important;
+    border: 1px solid rgba(34, 211, 238, 0.25) !important;
+    border-radius: 12px !important;
+    font-weight: 600 !important;
+}
+
+/* ── CHAT INPUT ───────────────────────────────────── */
 .stChatInput textarea {
-    background: rgba(255,255,255,0.97) !important;
-    color: black !important;
-    border-radius: 20px !important;
-    padding: 16px !important;
-    font-size: 16px !important;
+    background: #f8fafc !important;
+    color: #0f172a !important;
+    border-radius: 18px !important;
+    padding: 16px 20px !important;
+    font-size: 15px !important;
+    font-weight: 500 !important;
     outline: none !important;
     box-shadow: none !important;
+    caret-color: #0891b2 !important;
 }
 
 .stChatInput textarea::placeholder {
-    color: #444 !important;
+    color: #64748b !important;
 }
 
 :root {
-    --primary-color: #2563eb !important;
+    --primary-color: #22d3ee !important;
 }
 
 .stChatInputContainer,
 [data-testid="stChatInputContainer"],
 div[class*="chatInput"] {
-    border: 1px solid rgba(255,255,255,0.08) !important;
+    border: 1px solid rgba(34, 211, 238, 0.15) !important;
+    border-radius: 22px !important;
     outline: none !important;
-    box-shadow: none !important;
+    box-shadow: 0 0 0 0 transparent !important;
+    background: rgba(10, 15, 30, 0.6) !important;
+    backdrop-filter: blur(12px) !important;
 }
 
 .stChatInputContainer:focus-within,
 [data-testid="stChatInputContainer"]:focus-within {
-    border: 1px solid rgba(96,165,250,0.3) !important;
-    outline: none !important;
-    box-shadow: none !important;
+    border: 1px solid rgba(34, 211, 238, 0.45) !important;
+    box-shadow: 0 0 20px rgba(34, 211, 238, 0.08) !important;
 }
 
-.stButton button {
-    background: linear-gradient(135deg,#2563eb,#1d4ed8) !important;
-    color: white !important;
-    border-radius: 14px !important;
-    border: none !important;
-    font-weight: 700 !important;
-}
-
+/* ── CHAT MESSAGES ────────────────────────────────── */
 [data-testid="stChatMessage"] {
-    background: rgba(255,255,255,0.04);
-    border-radius: 20px;
-    padding: 14px;
-    border: 1px solid rgba(255,255,255,0.06);
-    backdrop-filter: blur(18px);
+    background: rgba(255, 255, 255, 0.03);
+    border-radius: 18px;
+    padding: 16px;
+    border: 1px solid rgba(34, 211, 238, 0.07);
+    backdrop-filter: blur(16px);
+    margin-bottom: 4px;
 }
 
+/* ── TYPING INDICATOR ─────────────────────────────── */
 .typing-container {
     display: flex;
     align-items: center;
-    width: 85px;
-    height: 42px;
-    padding: 0 15px;
+    width: 80px;
+    height: 40px;
+    padding: 0 14px;
     border-radius: 30px;
-    background: rgba(255,255,255,0.08);
-    backdrop-filter: blur(18px);
+    background: rgba(34, 211, 238, 0.07);
+    border: 1px solid rgba(34, 211, 238, 0.15);
+    backdrop-filter: blur(12px);
 }
 
 .typing-dot {
-    width: 8px;
-    height: 8px;
-    margin: 0 4px;
+    width: 7px;
+    height: 7px;
+    margin: 0 3px;
     border-radius: 50%;
-    background: white;
+    background: #22d3ee;
     animation: bounce 1.2s infinite ease-in-out;
 }
 
@@ -219,23 +266,73 @@ div[class*="chatInput"] {
 .typing-dot:nth-child(3) { animation-delay: 0.4s; }
 
 @keyframes bounce {
-    0%,80%,100% {
-        transform: translateY(0px);
-        opacity: 0.5;
-    }
-    40% {
-        transform: translateY(-7px);
-        opacity: 1;
-    }
+    0%,80%,100% { transform: translateY(0px); opacity: 0.4; }
+    40%          { transform: translateY(-7px); opacity: 1; }
 }
 
+/* ── FEATURE CARDS ────────────────────────────────── */
 .feature-card {
-    background: rgba(255,255,255,0.04);
-    border: 1px solid rgba(255,255,255,0.06);
-    padding: 18px;
+    background: rgba(34, 211, 238, 0.03);
+    border: 1px solid rgba(34, 211, 238, 0.12);
+    padding: 24px 20px;
     border-radius: 20px;
     text-align: center;
-    backdrop-filter: blur(12px);
+    backdrop-filter: blur(14px);
+    transition: transform 0.22s ease, box-shadow 0.22s ease, border-color 0.22s ease;
+    cursor: default;
+}
+
+.feature-card:hover {
+    transform: translateY(-4px);
+    border-color: rgba(34, 211, 238, 0.3);
+    box-shadow: 0 12px 40px rgba(34, 211, 238, 0.1);
+}
+
+.feature-card h3 {
+    color: #e2e8f0;
+    margin-bottom: 8px;
+    font-size: 18px;
+}
+
+.feature-card p {
+    color: rgba(148, 163, 184, 0.85);
+    font-size: 14px;
+    margin: 0;
+}
+
+/* ── FOOTER ───────────────────────────────────────── */
+.nova-footer {
+    text-align: center;
+    margin-top: 48px;
+    padding: 18px;
+    color: rgba(100, 116, 139, 0.6);
+    font-size: 12px;
+    letter-spacing: 0.05em;
+    border-top: 1px solid rgba(34, 211, 238, 0.06);
+}
+
+.nova-footer span {
+    color: rgba(34, 211, 238, 0.5);
+}
+
+/* ── ALERTS / STATUS ──────────────────────────────── */
+.stSuccess {
+    background: rgba(34, 211, 238, 0.07) !important;
+    border: 1px solid rgba(34, 211, 238, 0.2) !important;
+    color: #22d3ee !important;
+    border-radius: 10px !important;
+}
+
+.stError {
+    background: rgba(239, 68, 68, 0.07) !important;
+    border: 1px solid rgba(239, 68, 68, 0.2) !important;
+    border-radius: 10px !important;
+}
+
+/* ── CAPTION / TIMESTAMP ──────────────────────────── */
+.stCaptionContainer p, caption {
+    color: rgba(34, 211, 238, 0.45) !important;
+    font-size: 11px !important;
 }
 
 </style>
@@ -332,15 +429,6 @@ with st.sidebar:
 
     st.success(f"🟢 {model_name} Active")
 
-    temperature = st.slider(
-        "🌡️ Temperature",
-        min_value=0.0,
-        max_value=1.5,
-        value=0.7,
-        step=0.1,
-        help="Higher = more creative. Lower = more focused and precise."
-    )
-
     st.markdown("---")
 
     st.markdown("### 📄 Upload PDF/TXT")
@@ -424,8 +512,8 @@ if len(load_chat(st.session_state.current_chat)) == 0:
     with col1:
         st.markdown("""
         <div class="feature-card">
-            <h3>🧠 DeepSeek AI</h3>
-            <p>Advanced reasoning and problem solving.</p>
+            <h3>🧠 Deep Reasoning</h3>
+            <p>Multi-model AI with full conversation memory and context awareness.</p>
         </div>
         """, unsafe_allow_html=True)
 
@@ -433,15 +521,15 @@ if len(load_chat(st.session_state.current_chat)) == 0:
         st.markdown("""
         <div class="feature-card">
             <h3>👁️ Vision AI</h3>
-            <p>Analyze images using Moondream.</p>
+            <p>Analyse images, photos and diagrams using Moondream.</p>
         </div>
         """, unsafe_allow_html=True)
 
     with col3:
         st.markdown("""
         <div class="feature-card">
-            <h3>🎤 Voice Assistant</h3>
-            <p>Speak naturally using voice input.</p>
+            <h3>🎤 Voice & Docs</h3>
+            <p>Speak your prompts or upload PDF and TXT files as context.</p>
         </div>
         """, unsafe_allow_html=True)
 
@@ -536,8 +624,7 @@ if user_input:
                     json={
                         "model": "moondream",
                         "messages": api_messages,
-                        "stream": False,
-                        "options": {"temperature": temperature}
+                        "stream": False
                     },
                     timeout=300
                 )
@@ -549,7 +636,7 @@ if user_input:
                 response_placeholder.markdown(f"🤖 {full_response}")
 
             # =========================================================
-            # TEXT MODELS — with full conversation history
+            # TEXT MODELS — full conversation history
             # =========================================================
             else:
 
@@ -577,8 +664,7 @@ if user_input:
                     json={
                         "model": model_name,
                         "messages": api_messages,
-                        "stream": True,
-                        "options": {"temperature": temperature}
+                        "stream": True
                     },
                     stream=True,
                     timeout=300
@@ -619,3 +705,12 @@ if user_input:
         "assistant",
         full_response
     )
+
+# =========================================================
+# FOOTER
+# =========================================================
+st.markdown("""
+<div class="nova-footer">
+    ⚡ <span>NovaCore AI</span> &nbsp;·&nbsp; Powered by Ollama &nbsp;·&nbsp; Built with Streamlit
+</div>
+""", unsafe_allow_html=True)
