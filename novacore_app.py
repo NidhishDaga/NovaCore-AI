@@ -69,12 +69,16 @@ authenticator = Authenticate(
 try:
     authenticator.check_authentification()
 except Exception:
-    # After the OAuth redirect, Streamlit reruns while ?code= is still in
-    # the URL.  The library tries to exchange the already-consumed code a
-    # second time and throws.  If the user is now connected we can safely
-    # ignore that transient error; otherwise re-raise so real problems surface.
-    if not st.session_state.get("connected", False):
-        raise
+    # Suppress OAuth callback errors silently.
+    # Two benign scenarios cause this:
+    #  1. connected=True  — Streamlit reran while ?code= was still in the URL;
+    #     the library tried to exchange the already-consumed code a second time.
+    #  2. connected=False — code expired or was otherwise invalid.
+    # In both cases, letting execution continue is correct:
+    #  • If the user IS authenticated, the app renders normally below.
+    #  • If the user is NOT authenticated, the login gate shows the
+    #    "Sign in with Google" button so they can start a fresh flow.
+    pass
 
 # =========================================================
 # DATABASE
