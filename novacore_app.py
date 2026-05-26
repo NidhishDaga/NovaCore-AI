@@ -153,9 +153,8 @@ if _code and not st.session_state.get("connected", False):
     if _user and _user.get("email"):
         st.session_state.connected = True
         st.session_state.user_info = {
-            "email":   _user["email"],
-            "name":    _user.get("name", _user["email"]),
-            "picture": _user.get("picture", ""),
+            "email": _user["email"],
+            "name":  _user.get("name", _user["email"]),
         }
         st.session_state.pop("_oauth_error", None)
     else:
@@ -646,9 +645,8 @@ if not st.session_state.get("connected", False):
 # =========================================================
 # USER INFO (only reached when logged in)
 # =========================================================
-user_email   = st.session_state["user_info"]["email"]
-user_name    = st.session_state["user_info"]["name"]
-user_picture = st.session_state["user_info"].get("picture", "")
+user_email = st.session_state["user_info"]["email"]
+user_name  = st.session_state["user_info"]["name"]
 
 # =========================================================
 # RESOLVE GROQ API KEY
@@ -675,29 +673,21 @@ with st.sidebar:
     </div>
     """, unsafe_allow_html=True)
 
-    # ── User profile ──────────────────────────────────
-    if user_picture:
-        st.markdown(f"""
-        <div class="user-profile-card">
-            <img src="{user_picture}" alt="avatar">
-            <div>
-                <div class="user-name">{user_name}</div>
-                <div class="user-email">{user_email}</div>
-            </div>
+    # ── User profile (initials avatar — no Google photo) ──
+    st.markdown(f"""
+    <div class="user-profile-card">
+        <div style="width:40px;height:40px;border-radius:50%;
+                    background:linear-gradient(135deg,#0891b2,#6366f1);
+                    display:flex;align-items:center;justify-content:center;
+                    font-size:18px;font-weight:700;color:#ffffff;flex-shrink:0;">
+            {user_name[0].upper()}
         </div>
-        """, unsafe_allow_html=True)
-    else:
-        st.markdown(f"""
-        <div class="user-profile-card">
-            <div style="width:40px;height:40px;border-radius:50%;background:linear-gradient(135deg,#0891b2,#6366f1);display:flex;align-items:center;justify-content:center;font-size:18px;">
-                {user_name[0].upper()}
-            </div>
-            <div>
-                <div class="user-name">{user_name}</div>
-                <div class="user-email">{user_email}</div>
-            </div>
+        <div>
+            <div class="user-name">{user_name}</div>
+            <div class="user-email">{user_email}</div>
         </div>
-        """, unsafe_allow_html=True)
+    </div>
+    """, unsafe_allow_html=True)
 
     if st.button("🚪 Logout", use_container_width=True):
         _google_logout()
