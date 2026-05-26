@@ -4,12 +4,13 @@ import json
 import base64
 import io
 import os
+import requests as _requests
+from urllib.parse import urlencode
 from datetime import datetime
 from PIL import Image
 from PyPDF2 import PdfReader
 from streamlit_mic_recorder import speech_to_text
 from groq import Groq
-from streamlit_google_auth import Authenticate
 
 # =========================================================
 # PAGE CONFIG
@@ -34,51 +35,94 @@ TEXT_MODELS = [
 ]
 
 # =========================================================
-# GOOGLE AUTH — write credentials file from Streamlit secrets
+# GOOGLE OAUTH — lightweight manual implementation
+# No external auth library; uses only `requests` which is
+# already in requirements.txt.  Session state holds auth;
+# st.query_params.clear() prevents code reuse on reruns.
 # =========================================================
-def _write_google_credentials():
+_GOOGLE_AUTH_URL  = "https://accounts.google.com/o/oauth2/v2/auth"
+_GOOGLE_TOKEN_URL = "https://oauth2.googleapis.com/token"
+_GOOGLE_USER_URL  = "https://www.googleapis.com/oauth2/v3/userinfo"
+
+def _get_redirect_uri():
     try:
-        creds = {
-            "web": {
-                "client_id": st.secrets["GOOGLE_CLIENT_ID"],
-                "client_secret": st.secrets["GOOGLE_CLIENT_SECRET"],
-                "auth_uri": "https://accounts.google.com/o/oauth2/auth",
-                "token_uri": "https://oauth2.googleapis.com/token",
-                "redirect_uris": [
-                    st.secrets.get("REDIRECT_URI", "http://localhost:8501")
-                ]
-            }
-        }
-        path = "google_credentials.json"
-        with open(path, "w") as f:
-            json.dump(creds, f)
-        return path
-    except KeyError as e:
-        st.error(f"❌ Missing Streamlit secret: {e}. Add GOOGLE_CLIENT_ID, GOOGLE_CLIENT_SECRET and COOKIE_SECRET to your secrets.")
+        return st.secrets.get("REDIRECT_URI", "http://localhost:8501")
+    except Exception:
+        return "http://localhost:8501"
+
+def _get_google_auth_url():
+    """Build the Google OAuth consent-screen URL."""
+    try:
+        client_id = st.secrets["GOOGLE_CLIENT_ID"]
+    except KeyError:
+        st.error("❌ Missing secret: GOOGLE_CLIENT_ID. Add it in Streamlit Cloud → Settings → Secrets.")
         st.stop()
+    params = {
+        "client_id":     client_id,
+        "redirect_uri":  _get_redirect_uri(),
+        "response_type": "code",
+        "scope":         "openid email profile",
+        "access_type":   "offline",
+        "prompt":        "select_account",
+    }
+    return f"{_GOOGLE_AUTH_URL}?{urlencode(params)}"
 
-creds_path = _write_google_credentials()
+def _exchange_code(code: str):
+    """Exchange an OAuth code for user info. Returns (user_dict, error_str)."""
+    try:
+        client_id     = st.secrets["GOOGLE_CLIENT_ID"]
+        client_secret = st.secrets["GOOGLE_CLIENT_SECRET"]
+    except KeyError as exc:
+        return None, f"Missing secret: {exc}"
 
-authenticator = Authenticate(
-    secret_credentials_path=creds_path,
-    cookie_name="novacore_auth",
-    cookie_key=st.secrets.get("COOKIE_SECRET", "novacore_fallback_key"),
-    redirect_uri=st.secrets.get("REDIRECT_URI", "http://localhost:8501"),
-)
+    token_resp = _requests.post(_GOOGLE_TOKEN_URL, data={
+        "code":          code,
+        "client_id":     client_id,
+        "client_secret": client_secret,
+        "redirect_uri":  _get_redirect_uri(),
+        "grant_type":    "authorization_code",
+    }, timeout=10)
+    token_data = token_resp.json()
 
-try:
-    authenticator.check_authentification()
-except Exception:
-    # Suppress OAuth callback errors silently.
-    # Two benign scenarios cause this:
-    #  1. connected=True  — Streamlit reran while ?code= was still in the URL;
-    #     the library tried to exchange the already-consumed code a second time.
-    #  2. connected=False — code expired or was otherwise invalid.
-    # In both cases, letting execution continue is correct:
-    #  • If the user IS authenticated, the app renders normally below.
-    #  • If the user is NOT authenticated, the login gate shows the
-    #    "Sign in with Google" button so they can start a fresh flow.
-    pass
+    if "error" in token_data:
+        return None, token_data.get("error_description", token_data["error"])
+
+    access_token = token_data.get("access_token")
+    if not access_token:
+        return None, "No access token in response."
+
+    user_resp = _requests.get(
+        _GOOGLE_USER_URL,
+        headers={"Authorization": f"Bearer {access_token}"},
+        timeout=10,
+    )
+    user_data = user_resp.json()
+    return user_data, None
+
+def _google_logout():
+    """Clear all auth-related session state keys."""
+    for key in ("connected", "user_info", "_oauth_error"):
+        st.session_state.pop(key, None)
+
+# ── Process OAuth callback (runs on every rerun; safe to call repeatedly) ──
+_code = st.query_params.get("code")
+if _code and not st.session_state.get("connected", False):
+    with st.spinner("Signing you in…"):
+        _user, _err = _exchange_code(_code)
+    # Clear the ?code= from the URL immediately so it can't be reused
+    st.query_params.clear()
+    if _user and _user.get("email"):
+        st.session_state.connected = True
+        st.session_state.user_info = {
+            "email":   _user["email"],
+            "name":    _user.get("name", _user["email"]),
+            "picture": _user.get("picture", ""),
+        }
+        st.session_state.pop("_oauth_error", None)
+    else:
+        st.session_state.connected = False
+        st.session_state["_oauth_error"] = _err or "Authentication failed. Please try again."
+    st.rerun()
 
 # =========================================================
 # DATABASE
@@ -534,8 +578,11 @@ if not st.session_state.get("connected", False):
         </div>
         """, unsafe_allow_html=True)
 
-        authorization_url = authenticator.get_authorization_url()
-        st.link_button("🔐  Sign in with Google", authorization_url, use_container_width=True)
+        st.link_button("🔐  Sign in with Google", _get_google_auth_url(), use_container_width=True)
+
+        # Show a friendly message if a previous auth attempt failed
+        if st.session_state.get("_oauth_error"):
+            st.warning(f"⚠️ {st.session_state['_oauth_error']}")
 
     st.markdown("""
     <div class="nova-footer" style="margin-top:60px;">
@@ -590,7 +637,7 @@ with st.sidebar:
         """, unsafe_allow_html=True)
 
     if st.button("🚪 Logout", use_container_width=True):
-        authenticator.logout()
+        _google_logout()
         st.rerun()
 
     st.markdown("---")
