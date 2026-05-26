@@ -1,7 +1,7 @@
 # 🧠 NovaCore AI
 
-🌐 **Live Demo:** [Try NovaCore AI](https://novacore-ai-nidhishdaga.streamlit.app))
-💻 **GitHub:** [View Source Code](https://github.com/NidhishDaga/NovaCore-AI))
+🌐 **Live Demo:** [Try NovaCore AI](https://novacore-ai-nidhishdaga.streamlit.app)
+💻 **GitHub:** [View Source Code](https://github.com/NidhishDaga/NovaCore-AI)
 
 ---
 
