@@ -33,6 +33,12 @@ built with Python and Streamlit.
 
 ## 📸 Screenshots
 
+### 🔐 Login Page
+Secure Google authentication — 
+your workspace is private and 
+tied to your Google account.
+![Login Page](Screenshot%202026-05-26%20213418.png)
+
 ### 🤖 Model Selection & Chat Management
 Switch between multiple AI models with 
 persistent multi-turn memory per user.
