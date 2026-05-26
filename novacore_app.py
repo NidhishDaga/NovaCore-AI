@@ -66,7 +66,15 @@ authenticator = Authenticate(
     redirect_uri=st.secrets.get("REDIRECT_URI", "http://localhost:8501"),
 )
 
-authenticator.check_authentification()
+try:
+    authenticator.check_authentification()
+except Exception:
+    # After the OAuth redirect, Streamlit reruns while ?code= is still in
+    # the URL.  The library tries to exchange the already-consumed code a
+    # second time and throws.  If the user is now connected we can safely
+    # ignore that transient error; otherwise re-raise so real problems surface.
+    if not st.session_state.get("connected", False):
+        raise
 
 # =========================================================
 # DATABASE
