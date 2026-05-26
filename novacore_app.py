@@ -35,6 +35,45 @@ TEXT_MODELS = [
 ]
 
 # =========================================================
+# LOGO — SVG nova-burst icon (no external files needed)
+# =========================================================
+def _nova_icon(size: int, uid: str) -> str:
+    """Return the NovaCore star-burst as a self-contained inline SVG.
+    uid must be unique per page so gradient IDs don't collide."""
+    return (
+        f'<svg xmlns="http://www.w3.org/2000/svg" width="{size}" height="{size}" viewBox="0 0 100 100">'
+        f'<defs>'
+        f'<linearGradient id="nlg{uid}" x1="0%" y1="0%" x2="100%" y2="100%">'
+        f'<stop offset="0%" stop-color="#22d3ee"/>'
+        f'<stop offset="100%" stop-color="#a855f7"/>'
+        f'</linearGradient>'
+        f'<radialGradient id="nrg{uid}" cx="50%" cy="50%" r="50%">'
+        f'<stop offset="0%" stop-color="#22d3ee" stop-opacity="0.22"/>'
+        f'<stop offset="100%" stop-color="#a855f7" stop-opacity="0"/>'
+        f'</radialGradient>'
+        f'<filter id="nfl{uid}" x="-30%" y="-30%" width="160%" height="160%">'
+        f'<feGaussianBlur in="SourceGraphic" stdDeviation="2.8" result="b"/>'
+        f'<feMerge><feMergeNode in="b"/><feMergeNode in="SourceGraphic"/></feMerge>'
+        f'</filter>'
+        f'</defs>'
+        # soft radial glow behind the star
+        f'<circle cx="50" cy="50" r="46" fill="url(#nrg{uid})"/>'
+        # 8-pointed star: alternating outer (r=45) and inner (r=18) vertices
+        f'<polygon '
+        f'points="50,5 62.7,37.3 95,50 62.7,62.7 50,95 37.3,62.7 5,50 37.3,37.3" '
+        f'fill="url(#nlg{uid})" filter="url(#nfl{uid})"/>'
+        # thin outer ring
+        f'<circle cx="50" cy="50" r="44" fill="none" stroke="url(#nlg{uid})" stroke-width="0.6" opacity="0.35"/>'
+        # bright core
+        f'<circle cx="50" cy="50" r="11" fill="white" opacity="0.92"/>'
+        f'<circle cx="50" cy="50" r="6.5" fill="url(#nlg{uid})"/>'
+        f'</svg>'
+    )
+
+# Pre-compute base64 favicon (SVG injected via <link> tag)
+_FAV_B64 = base64.b64encode(_nova_icon(64, "fav").encode()).decode()
+
+# =========================================================
 # GOOGLE OAUTH — lightweight manual implementation
 # No external auth library; uses only `requests` which is
 # already in requirements.txt.  Session state holds auth;
@@ -549,25 +588,37 @@ div[class*="chatInput"] {
 </style>
 """, unsafe_allow_html=True)
 
+# Inject SVG favicon (overrides the emoji set in st.set_page_config)
+st.markdown(
+    f'<link rel="icon" type="image/svg+xml" href="data:image/svg+xml;base64,{_FAV_B64}">',
+    unsafe_allow_html=True,
+)
+
 # =========================================================
 # AUTHENTICATION GATE
 # =========================================================
 if not st.session_state.get("connected", False):
 
-    st.markdown(
-        '<div class="main-title" style="margin-top:40px;">NovaCore AI</div>',
-        unsafe_allow_html=True
-    )
-    st.markdown(
-        '<div class="subtitle">Premium Multimodal AI Assistant Platform</div>',
-        unsafe_allow_html=True
-    )
+    st.markdown(f"""
+    <div style="display:flex;align-items:center;justify-content:center;
+                gap:18px;padding:36px 0 6px;">
+        {_nova_icon(72, "lghdr")}
+        <div>
+            <div class="main-title" style="text-align:left;margin-bottom:2px;">
+                NovaCore AI
+            </div>
+            <div class="subtitle" style="text-align:left;margin-bottom:0;">
+                Premium Multimodal AI Assistant Platform
+            </div>
+        </div>
+    </div>
+    """, unsafe_allow_html=True)
 
     col_l, col_c, col_r = st.columns([1, 1.4, 1])
     with col_c:
-        st.markdown("""
+        st.markdown(f"""
         <div class="login-card">
-            <div class="login-logo">🧠</div>
+            <div class="login-logo">{_nova_icon(68, "lgcard")}</div>
             <div class="login-title">Welcome back</div>
             <div class="login-subtitle">Sign in to your personal workspace</div>
             <div class="login-desc">
@@ -611,6 +662,18 @@ except Exception:
 # SIDEBAR
 # =========================================================
 with st.sidebar:
+
+    # ── Sidebar logo ──────────────────────────────────
+    st.markdown(f"""
+    <div style="display:flex;align-items:center;gap:10px;padding:6px 0 14px;">
+        {_nova_icon(32, "sblogo")}
+        <span style="font-size:17px;font-weight:800;letter-spacing:-0.4px;
+                     background:linear-gradient(135deg,#22d3ee,#a855f7);
+                     -webkit-background-clip:text;-webkit-text-fill-color:transparent;">
+            NovaCore AI
+        </span>
+    </div>
+    """, unsafe_allow_html=True)
 
     # ── User profile ──────────────────────────────────
     if user_picture:
@@ -794,8 +857,20 @@ with st.sidebar:
 # =========================================================
 # HEADER
 # =========================================================
-st.markdown('<div class="main-title">NovaCore AI</div>', unsafe_allow_html=True)
-st.markdown('<div class="subtitle">Premium Multimodal AI Assistant Platform</div>', unsafe_allow_html=True)
+st.markdown(f"""
+<div style="display:flex;align-items:center;justify-content:center;
+            gap:20px;padding:16px 0 4px;">
+    {_nova_icon(76, "mainhdr")}
+    <div>
+        <div class="main-title" style="text-align:left;margin-bottom:2px;">
+            NovaCore AI
+        </div>
+        <div class="subtitle" style="text-align:left;margin-bottom:0;">
+            Premium Multimodal AI Assistant Platform
+        </div>
+    </div>
+</div>
+""", unsafe_allow_html=True)
 
 # =========================================================
 # API KEY GATE
